@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holiday Calendar</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="calendar-container">
+        <div class="calendar-header">
+            <button id="prevBtn">&lt;</button>
+            <span id="currentMonthYear"></span>
+            <button id="nextBtn">&gt;</button>
+        </div>
+
+        <div class="controls">
+            <select id="countrySelect"></select>
+            <button id="monthlyViewBtn" class="active">Monthly View</button>
+            <button id="quarterlyViewBtn">Quarterly View</button>
+        </div>
+
+        <div id="calendar" class="calendar-grid">
+            </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
