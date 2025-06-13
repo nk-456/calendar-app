@@ -11,13 +11,13 @@ const currentMonthYearSpan = document.getElementById('currentMonthYear');
 const calendarGrid = document.getElementById('calendar');
 const monthlyViewBtn = document.getElementById('monthlyViewBtn');
 const quarterlyViewBtn = document.getElementById('quarterlyViewBtn');
+const showHolidayWeeksCheckbox = document.getElementById('showHolidayWeeks');
 
-let currentDisplayedDate = new Date(); // Start with current date
-let currentView = 'monthly'; // 'monthly' or 'quarterly'
-let holidaysCache = {}; // Cache for fetched holidays, keyed by 'countryCode-year'
-let countries = []; // Will store the dynamically fetched list of countries
+let currentDisplayedDate = new Date();
+let currentView = 'monthly';
+let holidaysCache = {};
+let countries = [];
 
-// Function to fetch the full list of available countries from Nager.Date API
 async function fetchAvailableCountries() {
     try {
         const response = await fetch(COUNTRIES_API_URL);
@@ -35,34 +35,27 @@ async function fetchAvailableCountries() {
     }
 }
 
-// Function to populate country dropdown using the fetched list
 async function populateCountries() {
-    countries = await fetchAvailableCountries(); // Fetch the list of countries
-    countrySelect.innerHTML = ''; // Clear existing options
+    countries = await fetchAvailableCountries();
+    countrySelect.innerHTML = '';
 
-    // Sort countries alphabetically by name before populating the dropdown
     countries.sort((a, b) => a.name.localeCompare(b.name));
 
     countries.forEach(country => {
         const option = document.createElement('option');
-        option.value = country.countryCode; // Use 'countryCode' for the option value
-        option.textContent = country.name; // Use 'name' for the option text
+        option.value = country.countryCode;
+        option.textContent = country.name;
         countrySelect.appendChild(option);
     });
 
-    // Set a default country after populating
-    countrySelect.value = 'US'; // Try to set 'US' as default
+    countrySelect.value = 'US';
     if (!countrySelect.value && countries.length > 0) {
-        countrySelect.value = countries[0].countryCode; // Fallback to the first country if 'US' isn't found
+        countrySelect.value = countries[0].countryCode;
     }
 
-    // After populating the dropdown, render the calendar for the initial country
     renderCalendar();
 }
 
-// Function to fetch holidays for a specific country and year from Nager.Date API
-// Nager.Date 'PublicHolidays' endpoint returns ALL public holidays for the year.
-// This API does NOT require an API key.
 async function fetchHolidaysForYear(countryCode, year) {
     const cacheKey = `${countryCode}-${year}`;
     if (holidaysCache[cacheKey]) {
@@ -72,27 +65,22 @@ async function fetchHolidaysForYear(countryCode, year) {
     const url = `${CALENDAR_API_BASE_URL}PublicHolidays/${year}/${countryCode}`;
 
     try {
-        const response = await fetch(url); // No headers needed for Nager.Date API
+        const response = await fetch(url);
 
         if (!response.ok) {
             console.error(`HTTP error! status: ${response.status} for ${url}`);
-            if (response.status === 404) {
-                 alert(`No holiday data available for ${countryCode} in ${year}.`);
-            } else {
-                 alert(`Error fetching holidays. HTTP status: ${response.status}. Check console for details.`);
-            }
+            // Suppress direct alerts for 404s, console log is usually enough for data absence
             return [];
         }
 
         const data = await response.json();
-        
+
         if (!Array.isArray(data)) {
             console.error('Unexpected API response format for holidays:', data);
-            alert('Unexpected data format from holiday API.');
             return [];
         }
-        
-        holidaysCache[cacheKey] = data; // Cache the full year's data
+
+        holidaysCache[cacheKey] = data;
         return data;
     } catch (error) {
         console.error('Error fetching holidays:', error);
@@ -101,26 +89,136 @@ async function fetchHolidaysForYear(countryCode, year) {
     }
 }
 
-// Helper to get holidays for a specific month from the cached annual data
 async function getHolidaysForMonth(countryCode, year, month) {
     const allYearHolidays = await fetchHolidaysForYear(countryCode, year);
-    // Nager.Date date format is 'YYYY-MM-DD'
     return allYearHolidays.filter(holiday => {
-        const holidayDate = new Date(holiday.date); // Date string is directly 'YYYY-MM-DD'
-        return holidayDate.getMonth() === month; // month is 0-indexed (0 for Jan, 11 for Dec)
+        const holidayDate = new Date(holiday.date);
+        return holidayDate.getMonth() === month;
     });
 }
 
-// Function to render the calendar (monthly view)
-async function renderMonthlyCalendar(date) {
-    calendarGrid.innerHTML = ''; // Clear previous days
+function getHolidaysByDateMap(holidaysArray) {
+    const holidaysByDate = {};
+    holidaysArray.forEach(holiday => {
+        const holidayDate = new Date(holiday.date);
+        const dayKey = new Date(holidayDate.getFullYear(), holidayDate.getMonth(), holidayDate.getDate()).toDateString();
+        if (!holidaysByDate[dayKey]) {
+            holidaysByDate[dayKey] = [];
+        }
+        holidaysByDate[dayKey].push(holiday.name);
+    });
+    return holidaysByDate;
+}
 
-    const year = date.getFullYear();
-    const month = date.getMonth(); // 0-indexed
+// Function to apply weekly holiday highlighting within a given grid
+// This function needs to be aware of holidays in the *entire context* (e.g., quarter)
+// It operates on the *rendered DOM elements*
+function applyWeeklyHolidayHighlight(parentGrid, year, month, holidaysByDateMap) {
+    // Get all 'day' elements, explicitly excluding 'day-header'
+    const allRenderedDayElements = Array.from(parentGrid.children).filter(
+        element => element.classList.contains('day')
+    );
+
+    if (allRenderedDayElements.length === 0) return;
+
+    let currentWeekElements = [];
+    let weekHolidayCount = 0;
+
     const today = new Date();
-    const selectedCountry = countrySelect.value;
 
-    currentMonthYearSpan.textContent = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    // Helper to process a completed week
+    const processWeek = (elements, holidayCount, showOnlyHolidayWeeks) => {
+        elements.forEach(dayInfo => {
+            const element = dayInfo.element;
+            element.classList.remove('week-light-green', 'week-dark-green', 'blank-week'); // Clean up old highlights
+
+            // Apply highlighting to actual day elements
+            if (holidayCount === 1) {
+                element.classList.add('week-light-green');
+            } else if (holidayCount > 1) {
+                element.classList.add('week-dark-green');
+            }
+
+            // Handle "Show Holiday Weeks Only" logic
+            if (showOnlyHolidayWeeks && holidayCount === 0) {
+                // If a week has no holidays and the filter is on, blank out the day
+                element.innerHTML = '';
+                element.classList.remove('weekend', 'current-day'); // Remove other classes
+                element.classList.add('blank-week'); // Add a class for styling blank weeks
+            } else if (showOnlyHolidayWeeks && holidayCount > 0) {
+                 // If this week *has* holidays, ensure content is visible for days that were
+                 // previously blanked out by the 'day-placeholder-hidden' logic.
+                 if (element.classList.contains('day-placeholder-hidden')) {
+                    // Re-add content for days that were part of a holiday week but not holidays themselves
+                    const dayNumberDiv = document.createElement('div');
+                    dayNumberDiv.classList.add('day-number');
+                    dayNumberDiv.textContent = dayInfo.date.getDate(); // Use dayInfo.date to get the correct day number
+                    element.appendChild(dayNumberDiv);
+
+                    if (dayInfo.date.getDay() === 0 || dayInfo.date.getDay() === 6) {
+                        element.classList.add('weekend');
+                    }
+                    if (dayInfo.date.getFullYear() === today.getFullYear() &&
+                        dayInfo.date.getMonth() === today.getMonth() &&
+                        dayInfo.date.getDate() === today.getDate()) {
+                        element.classList.add('current-day');
+                    }
+                    // Holiday names would have already been added if the day had a holiday
+                    element.classList.remove('day-placeholder-hidden'); // Remove the placeholder class
+                 }
+            }
+        });
+    };
+
+    // Iterate through day elements in the grid
+    for (let i = 0; i < allRenderedDayElements.length; i++) {
+        const dayElement = allRenderedDayElements[i];
+
+        let currentDayDate = null;
+        const isFillerDay = dayElement.classList.contains('prev-month') || dayElement.classList.contains('next-month');
+
+        if (!isFillerDay) {
+            // For actual days of the current month
+            const dayNumber = parseInt(dayElement.querySelector('.day-number').textContent);
+            currentDayDate = new Date(year, month, dayNumber);
+        } else {
+            // For prev/next month filler days, we need to calculate their actual date
+            // This requires knowing the number of filler days at the start of the month
+            // and the index of the element within the whole set of rendered days.
+            const firstDayOfMonth = new Date(year, month, 1);
+            const firstDayOfWeek = firstDayOfMonth.getDay(); // 0 (Sun) - 6 (Sat)
+
+            // The index `i` here is relative to `allRenderedDayElements`, which starts after headers.
+            // So, `i` is effectively the 0-indexed day of the first week of the month (including prev-month fillers)
+            // A more direct way: the date of the very first day in `allRenderedDayElements`
+            // is `firstDayOfMonth - firstDayOfWeek` days.
+            const firstRenderedDate = new Date(firstDayOfMonth);
+            firstRenderedDate.setDate(firstDayOfMonth.getDate() - firstDayOfWeek);
+
+            currentDayDate = new Date(firstRenderedDate);
+            currentDayDate.setDate(firstRenderedDate.getDate() + i);
+        }
+
+        const dayKey = currentDayDate ? new Date(currentDayDate.getFullYear(), currentDayDate.getMonth(), currentDayDate.getDate()).toDateString() : null;
+        const hasHoliday = dayKey && holidaysByDateMap[dayKey] && holidaysByDateMap[dayKey].length > 0;
+
+        currentWeekElements.push({ element: dayElement, date: currentDayDate }); // Store element and its date
+        if (hasHoliday) {
+            weekHolidayCount += holidaysByDateMap[dayKey].length;
+        }
+
+        // Check if the current day completes a week (Saturday) or if it's the last day element
+        if ((currentDayDate && currentDayDate.getDay() === 6) || i === allRenderedDayElements.length - 1) {
+            processWeek(currentWeekElements, weekHolidayCount, showHolidayWeeksCheckbox.checked);
+            currentWeekElements = [];
+            weekHolidayCount = 0;
+        }
+    }
+}
+
+
+async function renderMonthDays(targetGrid, year, month, holidaysByDateMap, today) {
+    targetGrid.innerHTML = '';
 
     // Add day headers (Sun, Mon, Tue, etc.)
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -128,35 +226,24 @@ async function renderMonthlyCalendar(date) {
         const div = document.createElement('div');
         div.classList.add('day-header');
         div.textContent = dayName;
-        calendarGrid.appendChild(div);
+        targetGrid.appendChild(div);
     });
 
     const firstDayOfMonth = new Date(year, month, 1);
     const lastDayOfMonth = new Date(year, month + 1, 0);
     const daysInMonth = lastDayOfMonth.getDate();
-    const firstDayOfWeek = firstDayOfMonth.getDay(); // 0 for Sunday, 6 for Saturday
+    const firstDayOfWeek = firstDayOfMonth.getDay();
 
     // Add empty days for the beginning of the week (to align first day of month)
     for (let i = 0; i < firstDayOfWeek; i++) {
         const div = document.createElement('div');
-        div.classList.add('day', 'prev-month'); // Use 'prev-month' class for styling
-        calendarGrid.appendChild(div);
-    }
-
-    // Fetch and filter holidays for the current month
-    const holidays = await getHolidaysForMonth(selectedCountry, year, month);
-
-    // Organize holidays by their date for easy lookup
-    const holidaysByDate = {};
-    holidays.forEach(holiday => {
-        const holidayDate = new Date(holiday.date); // Nager.Date 'date' property is 'YYYY-MM-DD'
-        // Normalize to local date string for consistent keys, ignoring time
-        const dayKey = new Date(holidayDate.getFullYear(), holidayDate.getMonth(), holidayDate.getDate()).toDateString();
-        if (!holidaysByDate[dayKey]) {
-            holidaysByDate[dayKey] = [];
+        div.classList.add('day', 'prev-month');
+        // Add a placeholder class for days that are initially blanked out by the filter
+        if (showHolidayWeeksCheckbox.checked) {
+             div.classList.add('day-placeholder-hidden');
         }
-        holidaysByDate[dayKey].push(holiday.name); // Nager.Date uses 'name' for holiday name
-    });
+        targetGrid.appendChild(div);
+    }
 
     // Render days of the month
     for (let i = 1; i <= daysInMonth; i++) {
@@ -164,33 +251,33 @@ async function renderMonthlyCalendar(date) {
         const div = document.createElement('div');
         div.classList.add('day');
 
-        // Create a separate div for the day number to allow independent styling/positioning
         const dayNumberDiv = document.createElement('div');
         dayNumberDiv.classList.add('day-number');
         dayNumberDiv.textContent = i;
-        div.appendChild(dayNumberDiv); // Append day number first
+        div.appendChild(dayNumberDiv);
 
-        // Add 'weekend' class for Saturdays and Sundays
         if (day.getDay() === 0 || day.getDay() === 6) {
             div.classList.add('weekend');
         }
-        // Add 'current-day' class if it's today's date
         if (day.getFullYear() === today.getFullYear() &&
             day.getMonth() === today.getMonth() &&
             day.getDate() === today.getDate()) {
             div.classList.add('current-day');
         }
 
-        // Add holiday names if there are any for this day
-        const dayKey = day.toDateString();
-        if (holidaysByDate[dayKey]) {
+        const dayKey = new Date(day.getFullYear(), day.getMonth(), day.getDate()).toDateString();
+        if (holidaysByDateMap[dayKey]) {
             const holidayNamesDiv = document.createElement('div');
             holidayNamesDiv.classList.add('holiday-name');
-            // Display all holidays for the day, separated by a line break
-            holidayNamesDiv.innerHTML = holidaysByDate[dayKey].map(name => `<span>${name}</span>`).join('<br>');
-            div.appendChild(holidayNamesDiv); // Append holiday names second
+            holidayNamesDiv.innerHTML = holidaysByDateMap[dayKey].map(name => `<span>${name}</span>`).join('<br>');
+            div.appendChild(holidayNamesDiv);
+        } else {
+             // If this day has no holiday, and the filter is on, add a placeholder class
+             if (showHolidayWeeksCheckbox.checked) {
+                 div.classList.add('day-placeholder-hidden');
+             }
         }
-        calendarGrid.appendChild(div);
+        targetGrid.appendChild(div);
     }
 
     // Add empty days for the end of the week (to fill the grid)
@@ -198,50 +285,77 @@ async function renderMonthlyCalendar(date) {
     const remainingDays = (7 - (totalDaysDisplayed % 7)) % 7;
     for (let i = 0; i < remainingDays; i++) {
         const div = document.createElement('div');
-        div.classList.add('day', 'next-month'); // Use 'next-month' class for styling
-        calendarGrid.appendChild(div);
+        div.classList.add('day', 'next-month');
+        // Add a placeholder class for days that are initially blanked out by the filter
+        if (showHolidayWeeksCheckbox.checked) {
+             div.classList.add('day-placeholder-hidden');
+        }
+        targetGrid.appendChild(div);
     }
 
-    // Apply the weekly holiday highlighting
-    applyWeeklyHolidayHighlight(calendarGrid, year, month, holidaysByDate);
+    // After all days (including fillers) are rendered, apply the highlighting
+    applyWeeklyHolidayHighlight(targetGrid, year, month, holidaysByDateMap);
 }
 
-// Function to render the calendar (rolling quarterly view)
-async function renderQuarterlyCalendar(date) {
-    calendarGrid.innerHTML = ''; // Clear previous months
-    calendarGrid.style.gridTemplateColumns = '1fr'; // Adjust grid for stacked months in quarterly view
+async function renderMonthlyCalendar(date) {
+    calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
 
     const year = date.getFullYear();
-    const startMonth = date.getMonth(); // This will be the first month of our rolling quarter (0-indexed)
+    const month = date.getMonth();
     const today = new Date();
     const selectedCountry = countrySelect.value;
 
-    // --- Dynamic Quarter Title ---
-    const endMonthDate = new Date(year, startMonth + 2, 1); // Get the date for the 3rd month in the quarter
+    currentMonthYearSpan.textContent = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+    // For monthly view, fetch holidays for this month and its direct neighbors to ensure cross-month week highlighting
+    // This makes the `holidaysByDateMap` passed to `renderMonthDays` comprehensive enough.
+    const holidaysPromises = [];
+    holidaysPromises.push(fetchHolidaysForYear(selectedCountry, year)); // Current year
+    if (month === 0) { // If January, also fetch previous year's December
+        holidaysPromises.push(fetchHolidaysForYear(selectedCountry, year - 1));
+    } else if (month === 11) { // If December, also fetch next year's January
+        holidaysPromises.push(fetchHolidaysForYear(selectedCountry, year + 1));
+    }
+
+    const allYearsHolidaysArrays = await Promise.all(holidaysPromises);
+    const allHolidays = allYearsHolidaysArrays.flat(); // Flatten into a single array
+    const holidaysByDate = getHolidaysByDateMap(allHolidays);
+
+    renderMonthDays(calendarGrid, year, month, holidaysByDate, today);
+}
+
+async function renderQuarterlyCalendar(date) {
+    calendarGrid.innerHTML = '';
+    calendarGrid.style.gridTemplateColumns = '1fr';
+
+    const year = date.getFullYear();
+    const startMonth = date.getMonth();
+    const today = new Date();
+    const selectedCountry = countrySelect.value;
+
+    const endMonthDate = new Date(year, startMonth + 2, 1);
     const startMonthName = date.toLocaleString('en-US', { month: 'long' });
     const endMonthName = endMonthDate.toLocaleString('en-US', { month: 'long' });
     currentMonthYearSpan.textContent = `${startMonthName} - ${endMonthName} ${year}`;
-    // --- End Dynamic Quarter Title ---
 
+    // Fetch holidays for the current year and potentially adjacent years if the quarter spans them
+    const holidaysPromises = [];
+    holidaysPromises.push(fetchHolidaysForYear(selectedCountry, year));
+    // If the quarter includes December/January boundary
+    if (startMonth <= 0) { // If startMonth is Jan (0) or earlier (e.g., if navigating backward)
+        holidaysPromises.push(fetchHolidaysForYear(selectedCountry, year - 1));
+    }
+    if (startMonth >= 10) { // If startMonth is Nov (10) or Dec (11)
+        holidaysPromises.push(fetchHolidaysForYear(selectedCountry, year + 1));
+    }
 
-    // Fetch ALL holidays for the entire year once, then filter per month (efficiency)
-    const allYearHolidays = await fetchHolidaysForYear(selectedCountry, year);
+    const allYearsHolidaysArrays = await Promise.all(holidaysPromises);
+    const allHolidaysForQuarterContext = allYearsHolidaysArrays.flat();
+    const holidaysByDateForQuarter = getHolidaysByDateMap(allHolidaysForQuarterContext);
 
-    // Map all year holidays to holidaysByDate for easy lookup across the quarter
-    const holidaysByDateForQuarter = {};
-    allYearHolidays.forEach(holiday => {
-        const holidayDate = new Date(holiday.date);
-        const dayKey = new Date(holidayDate.getFullYear(), holidayDate.getMonth(), holidayDate.getDate()).toDateString();
-        if (!holidaysByDateForQuarter[dayKey]) {
-            holidaysByDateForQuarter[dayKey] = [];
-        }
-        holidaysByDateForQuarter[dayKey].push(holiday.name);
-    });
-
-    // Render each month in the rolling quarter (3 months)
     for (let monthOffset = 0; monthOffset < 3; monthOffset++) {
         const month = startMonth + monthOffset;
-        const monthDate = new Date(year, month, 1); // Create a date object for the current month in the loop
+        const monthDate = new Date(year, month, 1);
 
         const monthContainer = document.createElement('div');
         monthContainer.classList.add('quarter-month-container');
@@ -252,127 +366,24 @@ async function renderQuarterlyCalendar(date) {
         monthContainer.appendChild(monthHeader);
 
         const monthGrid = document.createElement('div');
-        monthGrid.classList.add('calendar-grid'); // Re-use calendar-grid for inner months
+        monthGrid.classList.add('calendar-grid');
         monthContainer.appendChild(monthGrid);
 
-        // Add day headers for each month
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        dayNames.forEach(dayName => {
-            const div = document.createElement('div');
-            div.classList.add('day-header');
-            div.textContent = dayName;
-            monthGrid.appendChild(div);
-        });
-
-        const firstDayOfMonth = new Date(year, month, 1);
-        const lastDayOfMonth = new Date(year, month + 1, 0);
-        const daysInMonth = lastDayOfMonth.getDate();
-        const firstDayOfWeek = firstDayOfMonth.getDay();
-
-        // Add empty days for the beginning of the week
-        for (let i = 0; i < firstDayOfWeek; i++) {
-            const div = document.createElement('div');
-            div.classList.add('day', 'prev-month');
-            monthGrid.appendChild(div);
-        }
-
-        // Render days of the month
-        for (let i = 1; i <= daysInMonth; i++) {
-            const day = new Date(year, month, i);
-            const div = document.createElement('div');
-            div.classList.add('day');
-
-            // Create a separate div for the day number
-            const dayNumberDiv = document.createElement('div');
-            dayNumberDiv.classList.add('day-number');
-            dayNumberDiv.textContent = i;
-            div.appendChild(dayNumberDiv); // Append day number first
-
-            if (day.getDay() === 0 || day.getDay() === 6) {
-                div.classList.add('weekend');
-            }
-            if (day.getFullYear() === today.getFullYear() &&
-                day.getMonth() === today.getMonth() &&
-                day.getDate() === today.getDate()) {
-                div.classList.add('current-day');
-            }
-
-            const dayKey = day.toDateString();
-            if (holidaysByDateForQuarter[dayKey]) {
-                const holidayNamesDiv = document.createElement('div');
-                holidayNamesDiv.classList.add('holiday-name');
-                holidayNamesDiv.innerHTML = holidaysByDateForQuarter[dayKey].map(name => `<span>${name}</span>`).join('<br>');
-                div.appendChild(holidayNamesDiv); // Append holiday names second
-            }
-            monthGrid.appendChild(div);
-        }
-
-        const totalDaysDisplayed = firstDayOfWeek + daysInMonth;
-        const remainingDays = (7 - (totalDaysDisplayed % 7)) % 7;
-        for (let i = 0; i < remainingDays; i++) {
-            const div = document.createElement('div');
-            div.classList.add('day', 'next-month');
-            monthGrid.appendChild(div);
-        }
-        // Apply highlighting for this specific month's grid using the quarter's total holidays
-        applyWeeklyHolidayHighlight(monthGrid, year, month, holidaysByDateForQuarter);
+        // Pass the comprehensive holidaysByDateForQuarter map to renderMonthDays
+        renderMonthDays(monthGrid, year, month, holidaysByDateForQuarter, today);
     }
 }
 
-// Function to apply weekly holiday highlighting
-function applyWeeklyHolidayHighlight(parentGrid, year, month, holidaysByDate) {
-    const daysInGrid = Array.from(parentGrid.querySelectorAll('.day:not(.prev-month):not(.next-month)'));
-
-    if (daysInGrid.length === 0) return;
-
-    let currentWeekDays = [];
-    for (let i = 0; i < daysInGrid.length; i++) {
-        const dayElement = daysInGrid[i];
-        const dayNumberElement = dayElement.querySelector('.day-number'); 
-        if (!dayNumberElement) continue; 
-        const dayNumber = parseInt(dayNumberElement.textContent);
-        if (isNaN(dayNumber)) continue;
-
-        const currentDayDate = new Date(year, month, dayNumber);
-        currentWeekDays.push({ element: dayElement, date: currentDayDate });
-
-        if (currentDayDate.getDay() === 6 || i === daysInGrid.length - 1) {
-            let holidayCountInWeek = 0;
-            currentWeekDays.forEach(dayInfo => {
-                const dayKey = new Date(dayInfo.date.getFullYear(), dayInfo.date.getMonth(), dayInfo.date.getDate()).toDateString();
-                if (holidaysByDate[dayKey] && holidaysByDate[dayKey].length > 0) {
-                    holidayCountInWeek += holidaysByDate[dayKey].length;
-                }
-            });
-
-            currentWeekDays.forEach(elementInfo => {
-                const element = elementInfo.element;
-                element.classList.remove('week-light-green', 'week-dark-green'); 
-                if (holidayCountInWeek === 1) {
-                    element.classList.add('week-light-green');
-                } else if (holidayCountInWeek > 1) {
-                    element.classList.add('week-dark-green');
-                }
-            });
-
-            currentWeekDays = []; 
-        }
-    }
-}
-
-// Initial render based on current view
 function renderCalendar() {
     if (currentView === 'monthly') {
-        calendarGrid.style.gridTemplateColumns = 'repeat(7, 1fr)';
         renderMonthlyCalendar(currentDisplayedDate);
     } else {
         renderQuarterlyCalendar(currentDisplayedDate);
     }
 }
 
-// Event Listeners
 countrySelect.addEventListener('change', () => {
-    holidaysCache = {}; // Clear cache when country changes
+    holidaysCache = {};
     renderCalendar();
 });
 
@@ -380,7 +391,6 @@ prevBtn.addEventListener('click', () => {
     if (currentView === 'monthly') {
         currentDisplayedDate.setMonth(currentDisplayedDate.getMonth() - 1);
     } else {
-        // For rolling quarter, go back by 1 month
         currentDisplayedDate.setMonth(currentDisplayedDate.getMonth() - 1);
     }
     renderCalendar();
@@ -390,7 +400,6 @@ nextBtn.addEventListener('click', () => {
     if (currentView === 'monthly') {
         currentDisplayedDate.setMonth(currentDisplayedDate.getMonth() + 1);
     } else {
-        // For rolling quarter, go forward by 1 month
         currentDisplayedDate.setMonth(currentDisplayedDate.getMonth() + 1);
     }
     renderCalendar();
@@ -410,5 +419,8 @@ quarterlyViewBtn.addEventListener('click', () => {
     renderCalendar();
 });
 
-// Initialize the application by populating countries and then rendering the calendar
+showHolidayWeeksCheckbox.addEventListener('change', () => {
+    renderCalendar();
+});
+
 populateCountries();
