@@ -8,22 +8,21 @@
 </head>
 <body>
     <div class="calendar-container">
-        <div class="calendar-header">
+        <div class="controls">
+            <select id="countrySelect"></select>
             <button id="prevBtn">&lt;</button>
             <span id="currentMonthYear"></span>
             <button id="nextBtn">&gt;</button>
+            <button id="monthlyViewBtn" class="active">Monthly</button>
+            <button id="quarterlyViewBtn">Quarterly</button>
+            <label class="checkbox-container">
+                <input type="checkbox" id="showHolidayWeeks">
+                Show Holiday Weeks Only
+            </label>
         </div>
-
-        <div class="controls">
-            <select id="countrySelect"></select>
-            <button id="monthlyViewBtn" class="active">Monthly View</button>
-            <button id="quarterlyViewBtn">Quarterly View</button>
-        </div>
-
         <div id="calendar" class="calendar-grid">
             </div>
     </div>
-
     <script src="script.js"></script>
 </body>
 </html>
