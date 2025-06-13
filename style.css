@@ -1,41 +1,44 @@
 body {
-    font-family: sans-serif;
+    font-family: Arial, sans-serif;
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 20px;
+    justify-content: center;
+    align-items: flex-start; /* Align to the top */
+    min-height: 100vh;
     background-color: #f4f4f4;
+    margin: 20px; /* Add some margin around the calendar */
 }
 
 .calendar-container {
     background-color: #fff;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     padding: 20px;
-    margin-bottom: 20px;
-    width: 90%;
-    max-width: 700px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    width: 90%; /* Adjust width as needed */
+    max-width: 900px; /* Max width for larger screens */
 }
 
-.calendar-header {
+.controls {
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 20px;
+    flex-wrap: wrap; /* Allow controls to wrap on smaller screens */
+    gap: 10px; /* Space between control elements */
 }
 
-#currentMonthYear {
-    font-size: 1.5em;
-    font-weight: bold;
-}
-
-.controls button, .controls select {
+.controls button,
+.controls select {
     padding: 8px 12px;
-    margin: 0 5px;
     border: 1px solid #ccc;
-    border-radius: 4px;
+    border-radius: 5px;
+    background-color: #f0f0f0;
     cursor: pointer;
+    font-size: 1em;
+}
+
+.controls button:hover,
+.controls select:hover {
+    background-color: #e0e0e0;
 }
 
 .controls button.active {
@@ -44,149 +47,125 @@ body {
     border-color: #007bff;
 }
 
+#currentMonthYear {
+    font-size: 1.2em;
+    font-weight: bold;
+    margin: 0 10px;
+    min-width: 150px; /* Ensure enough space for month/year */
+    text-align: center;
+}
+
+.checkbox-container {
+    margin-left: 20px; /* Adjust spacing as needed */
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.9em;
+    color: #555;
+}
+
 .calendar-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, 1fr); /* Default for monthly view */
     gap: 5px;
+    margin-top: 20px;
+    border: 1px solid #ddd;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #fdfdfd;
 }
 
 .day-header {
     font-weight: bold;
     text-align: center;
-    padding: 8px;
-    border-bottom: 1px solid #eee;
+    padding: 8px 0;
+    background-color: #e0e0e0;
+    border-bottom: 1px solid #ccc;
 }
 
-/* --- IMPORTANT LAYOUT STYLES FOR DAY CELLS --- */
 .day {
-    text-align: center;
-    padding: 5px; /* Reduced padding for more content space */
-    border: 1px solid #f9f9f9;
+    min-height: 80px; /* Ensure sufficient height for holiday names */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center content horizontally */
+    padding: 5px;
+    border: 1px solid #eee;
     border-radius: 4px;
     background-color: #fff;
-    cursor: default;
-
-    display: flex; /* Use flexbox to stack content vertically */
-    flex-direction: column;
-    justify-content: space-between; /* Pushes day number to top, holiday name to bottom */
-    align-items: center; /* Centers content horizontally */
-    min-height: 80px; /* Ensure enough height for day number + holiday name(s) */
-    box-sizing: border-box; /* Include padding/border in element's total width/height */
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    position: relative; /* For holiday positioning */
+    overflow: hidden; /* Hide overflowing holiday names if too many */
 }
 
-.day.weekend {
+.day-number {
+    font-weight: bold;
+    font-size: 1.1em;
+    margin-bottom: 5px; /* Space between number and holiday name */
+    color: #333;
+}
+
+.weekend {
+    background-color: #f9f9f9;
     color: #777;
 }
 
-.day.prev-month, .day.next-month {
-    color: #ccc;
+.current-day {
+    background-color: #e6f7ff; /* Light blue for today */
+    border-color: #90c7e7;
 }
 
-.day.current-day {
-    background-color: #007bff;
-    color: white;
-}
-
-/* NEW: Style for the day number within the cell */
-.day-number {
-    font-size: 1.1em; /* Slightly larger for day number */
-    font-weight: bold;
-    margin-bottom: auto; /* Pushes it to the top */
-    line-height: 1.2;
-}
-
-/* Style for holiday names within the cell */
 .holiday-name {
-    font-size: 0.65em; /* Smaller font for holiday names */
-    color: #d35400; /* A shade of orange for holidays */
+    font-size: 0.75em;
+    color: #007bff;
     text-align: center;
-    line-height: 1.1; /* Tighter line height for multiple holidays */
-    margin-top: auto; /* Pushes it to the bottom */
-    width: 100%; /* Ensure it takes full width for centering */
-    overflow: hidden; /* Hide overflow if name is too long */
-    text-overflow: ellipsis; /* Add ellipsis for long names */
-    display: -webkit-box; /* For multi-line ellipsis */
-    -webkit-line-clamp: 2; /* Limit to 2 lines, adjust as needed */
-    -webkit-box-orient: vertical;
+    line-height: 1.2;
+    /* Allow multiple holidays to stack */
+    display: flex;
+    flex-direction: column;
 }
 
-/* --- END IMPORTANT LAYOUT STYLES --- */
+.holiday-name span {
+    display: block; /* Each holiday name on a new line */
+}
 
-/* Weekly highlighting colors */
+
 .week-light-green {
-    background-color: lightgreen !important;
+    background-color: lightgreen; /* A softer, more pastel light green */
 }
 
+/* Styling for weeks with more than 1 holiday */
 .week-dark-green {
-    background-color: darkgreen !important;
-    color: white !important; /* Ensure text is readable on dark green */
+    background-color: darkgreen; /* A more pronounced, but still pleasant, darker green */
 }
 
-/* Adjust holiday name color on dark green background for readability */
-.week-dark-green .holiday-name {
-    color: white !important; /* Keep holiday names white on dark green */
+/* New styles for "Show Holiday Weeks Only" feature */
+.blank-day-no-holiday {
+    background-color: #f8f8f8; /* A very light grey or transparent */
+    border: 1px dashed #f0f0f0; /* Dashed border to indicate it's empty */
+    box-shadow: none;
+    color: transparent; /* Hide text */
+    pointer-events: none; /* Make it unclickable/unhoverable */
 }
 
+.blank-week {
+    /* When a whole week is made blank, remove numbers and weekend highlighting */
+    background-color: #f8f8f8 !important; /* Override other background colors */
+    border: 1px dashed #f0f0f0 !important;
+    box-shadow: none !important;
+}
 
+/* Styles for quarterly view */
 .quarter-month-container {
+    border: 1px solid #ddd;
     margin-bottom: 20px;
-    border: 1px solid #eee;
-    border-radius: 4px;
-    padding: 15px;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: #fff;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
 .quarter-month-container h3 {
     text-align: center;
     margin-top: 0;
-    margin-bottom: 10px;
-}
-
-.quarter-month-container .calendar-grid {
-    margin-bottom: 10px;
-}
-
-/* Styles for an optional detailed holiday list (currently commented out in HTML) */
-#holidayList {
-    margin-top: 20px;
-    padding: 15px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background-color: #fff;
-    width: 90%;
-    max-width: 700px;
-}
-
-#holidayList h2 {
-    font-size: 1.3em;
-    margin-top: 0;
-    margin-bottom: 10px;
-    text-align: center;
-}
-
-#holidayList ul {
-    list-style: none;
-    padding: 0;
-}
-
-#holidayList li {
-    padding: 8px 0;
-    border-bottom: 1px solid #eee;
-}
-
-#holidayList li:last-child {
-    border-bottom: none;
-}
-
-/* Alert message styles */
-.alert-message {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #f8d7da;
-    color: #721c24;
-    border: 1px solid #f5c6cb;
-    padding: 15px;
-    border-radius: 4px;
-    z-index: 1000;
-}
+    margin-bottom: 15px;
+    color:
